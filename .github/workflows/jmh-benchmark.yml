@@ -37,7 +37,7 @@ jobs:
       uses: google-github-actions/setup-gcloud@v2
       
     - name: Start VM
-      run: gcloud compute instances start instance-1 --zone=us-central1-a
+      run: gcloud compute instances start nullway-jmh --zone=us-central1-a
       
     - name: Run benchmarks 
       run: |
