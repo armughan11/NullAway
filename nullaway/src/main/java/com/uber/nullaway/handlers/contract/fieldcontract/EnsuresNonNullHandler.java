@@ -22,7 +22,6 @@
 
 package com.uber.nullaway.handlers.contract.fieldcontract;
 
-import static com.uber.nullaway.ASTHelpersBackports.getEnclosedElements;
 import static com.uber.nullaway.NullabilityUtil.castToNonNull;
 import static com.uber.nullaway.NullabilityUtil.getAnnotationValueArray;
 
@@ -46,11 +45,9 @@ import java.util.Iterator;
 import java.util.Set;
 import java.util.stream.Collectors;
 import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.VariableElement;
 import org.checkerframework.nullaway.dataflow.cfg.node.MethodInvocationNode;
-import org.jspecify.annotations.Nullable;
 
 /**
  * This Handler parses {@code @EnsuresNonNull} annotation and when the annotated method is invoked,
@@ -266,16 +263,5 @@ public class EnsuresNonNullHandler extends AbstractFieldContractHandler {
     }
     return super.onDataflowVisitMethodInvocation(
         node, methodSymbol, state, apContext, inputs, thenUpdates, elseUpdates, bothUpdates);
-  }
-
-  private @Nullable VariableElement getFieldOfClass(
-      Symbol.ClassSymbol classSymbol, String fieldName) {
-    for (Symbol enclosedElement : getEnclosedElements(classSymbol)) {
-      if (enclosedElement.getKind().equals(ElementKind.FIELD)
-          && enclosedElement.getSimpleName().toString().equals(fieldName)) {
-        return (VariableElement) enclosedElement;
-      }
-    }
-    return null;
   }
 }

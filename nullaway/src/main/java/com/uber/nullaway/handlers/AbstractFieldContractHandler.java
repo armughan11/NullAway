@@ -37,7 +37,6 @@ import com.uber.nullaway.handlers.contract.ContractUtils;
 import java.util.Collections;
 import java.util.Set;
 import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.VariableElement;
 import org.jspecify.annotations.Nullable;
@@ -124,18 +123,6 @@ public abstract class AbstractFieldContractHandler extends BaseNoOpHandler {
   protected abstract boolean validateAnnotationSemantics(
       MethodTree tree, MethodAnalysisContext methodAnalysisContext);
 
-  private @Nullable VariableElement getStaticFieldOfClass(
-      Symbol.ClassSymbol classSymbol, String fieldName) {
-    for (Symbol enclosedElement : getEnclosedElements(classSymbol)) {
-      if (enclosedElement.getKind().equals(ElementKind.FIELD)
-          && enclosedElement.getSimpleName().toString().equals(fieldName)
-          && enclosedElement.getModifiers().contains(Modifier.STATIC)) {
-        return (VariableElement) enclosedElement;
-      }
-    }
-    return null;
-  }
-
   /**
    * Validates whether the parameter inside annotation conforms to the syntax rules. Parameters must
    * conform to the following rules:
@@ -160,7 +147,6 @@ public abstract class AbstractFieldContractHandler extends BaseNoOpHandler {
     VisitorState state = methodAnalysisContext.state();
     NullAway analysis = methodAnalysisContext.analysis();
     if (content.isEmpty()) {
-      // we should not allow useless annotations.
       message =
           "empty @"
               + annotName
@@ -176,16 +162,17 @@ public abstract class AbstractFieldContractHandler extends BaseNoOpHandler {
                   null));
       return false;
     } else {
+      Symbol.ClassSymbol classSymbol =
+          castToNonNull(ASTHelpers.enclosingClass(methodAnalysisContext.methodSymbol()));
       for (String fieldName : content) {
-        Symbol.ClassSymbol classSymbol =
-            castToNonNull(ASTHelpers.enclosingClass(methodAnalysisContext.methodSymbol()));
-        VariableElement staticField = getStaticFieldOfClass(classSymbol, fieldName);
-        if (staticField != null) {
-          continue;
+        VariableElement field = getFieldOfClass(classSymbol, fieldName);
+        if (field != null) {
+          if (field.getModifiers().contains(Modifier.STATIC)) {
+            continue;
+          }
         }
         if (fieldName.contains(".")) {
           if (!fieldName.startsWith(THIS_NOTATION)) {
-
             message =
                 "currently @"
                     + annotName
@@ -208,7 +195,7 @@ public abstract class AbstractFieldContractHandler extends BaseNoOpHandler {
             fieldName = fieldName.substring(fieldName.lastIndexOf(".") + 1);
           }
         }
-        VariableElement field = getInstanceFieldOfClass(classSymbol, fieldName);
+        field = getInstanceFieldOfClass(classSymbol, fieldName);
         if (field == null) {
           message =
               "For @"
@@ -254,6 +241,21 @@ public abstract class AbstractFieldContractHandler extends BaseNoOpHandler {
     Symbol.ClassSymbol superClass = (Symbol.ClassSymbol) classSymbol.getSuperclass().tsym;
     if (superClass != null) {
       return getInstanceFieldOfClass(superClass, name);
+    }
+    return null;
+  }
+
+  public @Nullable VariableElement getFieldOfClass(
+      Symbol.ClassSymbol classSymbol, String fieldName) {
+    for (Symbol enclosedElement : getEnclosedElements(classSymbol)) {
+      if (enclosedElement.getKind().isField()
+          && enclosedElement.getSimpleName().contentEquals(fieldName)) {
+        return (VariableElement) enclosedElement;
+      }
+    }
+    Symbol.ClassSymbol superclass = (Symbol.ClassSymbol) classSymbol.getSuperclass().asElement();
+    if (superclass != null) {
+      return getFieldOfClass(superclass, fieldName);
     }
     return null;
   }

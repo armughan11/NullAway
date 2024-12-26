@@ -49,14 +49,12 @@ public class EnsuresNonNullTests extends NullAwayTestsBase {
             "  @Nullable static Item nullableItem;",
             "  @RequiresNonNull(\"nullableItem\")",
             "  public static void run() {",
-            "    // BUG: Diagnostic contains: dereferenced expression nullableItem is @Nullable",
             "    nullableItem.call();",
             "     ",
             "  }",
             "  @RequiresNonNull(\"this.nullableItem\")",
             "  // BUG: Diagnostic contains: For @RequiresNonNull annotation, cannot find instance field",
             "  public static void test() {",
-            "    // BUG: Diagnostic contains: dereferenced expression nullableItem is @Nullable",
             "    nullableItem.call();",
             "  }",
             "  @EnsuresNonNull(\"nullableItem\")",
@@ -325,6 +323,89 @@ public class EnsuresNonNullTests extends NullAwayTestsBase {
             "}")
         .addSourceLines(
             "Bar.java", "package com.uber;", "class Bar {", "  public void call() { }", "}")
+        .doTest();
+  }
+
+  @Test
+  public void requiresNonNullCallSiteError() {
+    defaultCompilationHelper
+        .addSourceLines(
+            "Foo.java",
+            "package com.uber;",
+            "import javax.annotation.Nullable;",
+            "import com.uber.nullaway.annotations.RequiresNonNull;",
+            "class Foo {",
+            "  @Nullable Item nullableItem;",
+            "  ",
+            "  @RequiresNonNull({\"nullableItem\"})",
+            "  public void run() {",
+            "    nullableItem.call();",
+            "  }",
+            "  ",
+            "  public static void main(String[] args) {",
+            "    Foo foo = new Foo();",
+            "    // BUG: Diagnostic contains: Expected field nullableItem to be non-null",
+            "    foo.run();",
+            "  }",
+            "}")
+        .addSourceLines(
+            "Item.java", "package com.uber;", "class Item {", "  public void call() { }", "}")
+        .doTest();
+  }
+
+  @Test
+  public void requiresNonNullCallSiteErrorStaticField() {
+    defaultCompilationHelper
+        .addSourceLines(
+            "Foo.java",
+            "package com.uber;",
+            "import javax.annotation.Nullable;",
+            "import com.uber.nullaway.annotations.RequiresNonNull;",
+            "class Foo {",
+            "  static @Nullable Item staticNullableItem;",
+            "  ",
+            "  @RequiresNonNull({\"staticNullableItem\"})",
+            "  public void run() {",
+            "    staticNullableItem.call();",
+            "  }",
+            "  ",
+            "  public static void main(String[] args) {",
+            "    Foo foo = new Foo();",
+            "    // BUG: Diagnostic contains: Expected static field staticNullableItem to be non-null",
+            "    foo.run();",
+            "  }",
+            "}")
+        .addSourceLines(
+            "Item.java", "package com.uber;", "class Item {", "  public void call() { }", "}")
+        .doTest();
+  }
+
+  @Test
+  public void requiresNonNullStaticFieldInterpretation() {
+    defaultCompilationHelper
+        .addSourceLines(
+            "Foo.java",
+            "package com.uber;",
+            "import javax.annotation.Nullable;",
+            "import com.uber.nullaway.annotations.RequiresNonNull;",
+            "class Foo {",
+            "  @Nullable static Item staticNullableItem;",
+            "  ",
+            "  @RequiresNonNull(\"staticNullableItem\")",
+            "  public void run() {",
+            "    staticNullableItem.call();",
+            "    staticNullableItem = null;",
+            "    // BUG: Diagnostic contains: dereferenced expression staticNullableItem is @Nullable",
+            "    staticNullableItem.call();",
+            "  }",
+            "  ",
+            "  @RequiresNonNull(\"staticNullableItem\")",
+            "  public void test() {",
+            "    staticNullableItem.call();",
+            "  }",
+            "}")
+        .addSourceLines(
+            "Item.java", "package com.uber;", "class Item {", "  public void call() { }", "}")
         .doTest();
   }
 }
