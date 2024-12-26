@@ -48,7 +48,6 @@ public class EnsuresNonNullTests extends NullAwayTestsBase {
             "class Foo {",
             "  @Nullable static Item nullableItem;",
             "  @RequiresNonNull(\"nullableItem\")",
-            "  // BUG: Diagnostic contains: For @RequiresNonNull annotation, cannot find instance field",
             "  public static void run() {",
             "    // BUG: Diagnostic contains: dereferenced expression nullableItem is @Nullable",
             "    nullableItem.call();",
@@ -61,7 +60,6 @@ public class EnsuresNonNullTests extends NullAwayTestsBase {
             "    nullableItem.call();",
             "  }",
             "  @EnsuresNonNull(\"nullableItem\")",
-            "  // BUG: Diagnostic contains: For @EnsuresNonNull annotation, cannot find instance field",
             "  public static void test2() {",
             "    nullableItem = new Item();",
             "  }",
@@ -303,6 +301,30 @@ public class EnsuresNonNullTests extends NullAwayTestsBase {
             "    office1.box.content.run();",
             "  }",
             "}")
+        .doTest();
+  }
+
+  @Test
+  public void ensuresNonNullWithStaticField() {
+    defaultCompilationHelper
+        .addSourceLines(
+            "Foo.java",
+            "package com.uber;",
+            "import javax.annotation.Nullable;",
+            "import com.uber.nullaway.annotations.EnsuresNonNull;",
+            "class Foo {",
+            "  @Nullable static Bar staticNullableItem;",
+            "  @EnsuresNonNull(\"staticNullableItem\")",
+            "  public void initializeStaticField() {",
+            "    staticNullableItem = new Bar();",
+            "  }",
+            "  public void useStaticField() {",
+            "    initializeStaticField();",
+            "    staticNullableItem.call();",
+            "  }",
+            "}")
+        .addSourceLines(
+            "Bar.java", "package com.uber;", "class Bar {", "  public void call() { }", "}")
         .doTest();
   }
 }

@@ -37,6 +37,7 @@ import com.uber.nullaway.handlers.contract.ContractUtils;
 import java.util.Collections;
 import java.util.Set;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.VariableElement;
 import org.jspecify.annotations.Nullable;
@@ -123,6 +124,18 @@ public abstract class AbstractFieldContractHandler extends BaseNoOpHandler {
   protected abstract boolean validateAnnotationSemantics(
       MethodTree tree, MethodAnalysisContext methodAnalysisContext);
 
+  private @Nullable VariableElement getStaticFieldOfClass(
+      Symbol.ClassSymbol classSymbol, String fieldName) {
+    for (Symbol enclosedElement : getEnclosedElements(classSymbol)) {
+      if (enclosedElement.getKind().equals(ElementKind.FIELD)
+          && enclosedElement.getSimpleName().toString().equals(fieldName)
+          && enclosedElement.getModifiers().contains(Modifier.STATIC)) {
+        return (VariableElement) enclosedElement;
+      }
+    }
+    return null;
+  }
+
   /**
    * Validates whether the parameter inside annotation conforms to the syntax rules. Parameters must
    * conform to the following rules:
@@ -164,8 +177,15 @@ public abstract class AbstractFieldContractHandler extends BaseNoOpHandler {
       return false;
     } else {
       for (String fieldName : content) {
+        Symbol.ClassSymbol classSymbol =
+            castToNonNull(ASTHelpers.enclosingClass(methodAnalysisContext.methodSymbol()));
+        VariableElement staticField = getStaticFieldOfClass(classSymbol, fieldName);
+        if (staticField != null) {
+          continue;
+        }
         if (fieldName.contains(".")) {
           if (!fieldName.startsWith(THIS_NOTATION)) {
+
             message =
                 "currently @"
                     + annotName
@@ -188,8 +208,6 @@ public abstract class AbstractFieldContractHandler extends BaseNoOpHandler {
             fieldName = fieldName.substring(fieldName.lastIndexOf(".") + 1);
           }
         }
-        Symbol.ClassSymbol classSymbol =
-            castToNonNull(ASTHelpers.enclosingClass(methodAnalysisContext.methodSymbol()));
         VariableElement field = getInstanceFieldOfClass(classSymbol, fieldName);
         if (field == null) {
           message =

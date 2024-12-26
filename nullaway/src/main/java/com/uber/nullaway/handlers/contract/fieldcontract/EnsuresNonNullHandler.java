@@ -22,6 +22,7 @@
 
 package com.uber.nullaway.handlers.contract.fieldcontract;
 
+import static com.uber.nullaway.ASTHelpersBackports.getEnclosedElements;
 import static com.uber.nullaway.NullabilityUtil.castToNonNull;
 import static com.uber.nullaway.NullabilityUtil.getAnnotationValueArray;
 
@@ -40,11 +41,16 @@ import com.uber.nullaway.handlers.AbstractFieldContractHandler;
 import com.uber.nullaway.handlers.MethodAnalysisContext;
 import com.uber.nullaway.handlers.contract.ContractUtils;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.stream.Collectors;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.VariableElement;
 import org.checkerframework.nullaway.dataflow.cfg.node.MethodInvocationNode;
+import org.jspecify.annotations.Nullable;
 
 /**
  * This Handler parses {@code @EnsuresNonNull} annotation and when the annotated method is invoked,
@@ -76,24 +82,71 @@ public class EnsuresNonNullHandler extends AbstractFieldContractHandler {
     VisitorState state = methodAnalysisContext.state();
     Symbol.MethodSymbol methodSymbol = methodAnalysisContext.methodSymbol();
     String message;
+
     if (tree.getBody() == null) {
       return true;
     }
-    Set<String> nonnullFieldsOfReceiverAtExit =
+
+    Set<Element> nonnullFieldsAtExit =
         analysis
             .getNullnessAnalysis(state)
-            .getNonnullFieldsOfReceiverAtExit(new TreePath(state.getPath(), tree), state.context)
-            .stream()
+            .getNonnullFieldsOfReceiverAtExit(new TreePath(state.getPath(), tree), state.context);
+
+    Set<Element> nonnullStaticFieldsAtExit =
+        analysis
+            .getNullnessAnalysis(state)
+            .getNonnullStaticFieldsAtExit(new TreePath(state.getPath(), tree), state.context);
+
+    Set<String> nonnullFieldNames = new HashSet<>();
+
+    nonnullFieldNames.addAll(
+        nonnullFieldsAtExit.stream()
             .map(e -> e.getSimpleName().toString())
-            .collect(Collectors.toSet());
+            .collect(Collectors.toSet()));
+
+    nonnullFieldNames.addAll(
+        nonnullStaticFieldsAtExit.stream()
+            .map(e -> e.getSimpleName().toString())
+            .collect(Collectors.toSet()));
+
     Set<String> fieldNames = getAnnotationValueArray(methodSymbol, annotName, false);
     if (fieldNames == null) {
       fieldNames = Collections.emptySet();
     }
-    fieldNames = ContractUtils.trimReceivers(fieldNames);
-    boolean isValidLocalPostCondition = nonnullFieldsOfReceiverAtExit.containsAll(fieldNames);
+
+    Set<String> processedFieldNames = new HashSet<>();
+    for (String fieldName : fieldNames) {
+      if (fieldName.contains(".")) {
+        if (fieldName.startsWith(THIS_NOTATION)) {
+          fieldName = fieldName.substring(fieldName.lastIndexOf(".") + 1);
+        } else {
+          message =
+              "currently @"
+                  + annotName
+                  + " supports only class fields of the method receiver: "
+                  + fieldName
+                  + " is not supported";
+
+          state.reportMatch(
+              analysis
+                  .getErrorBuilder()
+                  .createErrorDescription(
+                      new ErrorMessage(ErrorMessage.MessageTypes.ANNOTATION_VALUE_INVALID, message),
+                      tree,
+                      analysis.buildDescription(tree),
+                      state,
+                      null));
+          continue;
+        }
+      }
+      processedFieldNames.add(fieldName);
+    }
+
+    Set<String> invalidFields = new HashSet<>(processedFieldNames);
+    invalidFields.removeAll(nonnullFieldNames);
+
+    boolean isValidLocalPostCondition = invalidFields.isEmpty();
     if (!isValidLocalPostCondition) {
-      fieldNames.removeAll(nonnullFieldsOfReceiverAtExit);
       message =
           String.format(
               "Method is annotated with @EnsuresNonNull but fails to ensure the following fields are non-null at exit: %s",
@@ -191,15 +244,20 @@ public class EnsuresNonNullHandler extends AbstractFieldContractHandler {
     if (fieldNames != null) {
       fieldNames = ContractUtils.trimReceivers(fieldNames);
       for (String fieldName : fieldNames) {
-        VariableElement field =
-            getInstanceFieldOfClass(
-                castToNonNull(ASTHelpers.enclosingClass(methodSymbol)), fieldName);
+        Symbol.ClassSymbol enclosingClass = castToNonNull(ASTHelpers.enclosingClass(methodSymbol));
+        VariableElement field = getFieldOfClass(enclosingClass, fieldName);
         if (field == null) {
           // Invalid annotation, will result in an error during validation. For now, skip field.
           continue;
         }
-        AccessPath accessPath =
-            AccessPath.fromBaseAndElement(node.getTarget().getReceiver(), field, apContext);
+        AccessPath accessPath;
+        if (field.getModifiers().contains(Modifier.STATIC)) {
+          accessPath = AccessPath.fromStaticField(field);
+        } else {
+          accessPath =
+              AccessPath.fromBaseAndElement(node.getTarget().getReceiver(), field, apContext);
+        }
+
         if (accessPath == null) {
           continue;
         }
@@ -208,5 +266,16 @@ public class EnsuresNonNullHandler extends AbstractFieldContractHandler {
     }
     return super.onDataflowVisitMethodInvocation(
         node, methodSymbol, state, apContext, inputs, thenUpdates, elseUpdates, bothUpdates);
+  }
+
+  private @Nullable VariableElement getFieldOfClass(
+      Symbol.ClassSymbol classSymbol, String fieldName) {
+    for (Symbol enclosedElement : getEnclosedElements(classSymbol)) {
+      if (enclosedElement.getKind().equals(ElementKind.FIELD)
+          && enclosedElement.getSimpleName().toString().equals(fieldName)) {
+        return (VariableElement) enclosedElement;
+      }
+    }
+    return null;
   }
 }
